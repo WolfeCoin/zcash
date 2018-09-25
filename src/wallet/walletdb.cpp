@@ -124,7 +124,24 @@ bool CWalletDB::WriteCryptedZKey(const libzcash::SproutPaymentAddress & addr,
     }
     return true;
 }
+bool CWalletDB::WriteCryptedSaplingZKey(const libzcash::SaplingFullViewingKey &fvk,
+                          const std::vector<unsigned char>& vchCryptedSecret,
+                          const CKeyMetadata &keyMeta)
+{
+    const bool fEraseUnencryptedKey = true;
+    nWalletDBUpdated++;
 
+    if (!Write(std::make_pair(std::string("sapzkeymeta"), fvk.in_viewing_key()), keyMeta))
+        return false;
+
+    if (!Write(std::make_pair(std::string("csapzkey"), fvk.in_viewing_key()), std::make_pair(fvk, vchCryptedSecret), false))
+        return false;
+    if (fEraseUnencryptedKey)
+    {
+        Erase(std::make_pair(std::string("sapzkey"), fvk.in_viewing_key()));
+    }
+    return true;
+}
 bool CWalletDB::WriteMasterKey(unsigned int nID, const CMasterKey& kMasterKey)
 {
     nWalletDBUpdated++;
@@ -140,6 +157,18 @@ bool CWalletDB::WriteZKey(const libzcash::SproutPaymentAddress& addr, const libz
 
     // pair is: tuple_key("zkey", paymentaddress) --> secretkey
     return Write(std::make_pair(std::string("zkey"), addr), key, false);
+}
+bool CWalletDB::WriteSaplingZKey(const libzcash::SaplingIncomingViewingKey &ivk,
+                const libzcash::SaplingExtendedSpendingKey &key,
+                const CKeyMetadata &keyMeta,
+                const boost::optional<libzcash::SaplingPaymentAddress> &defaultAddr)
+{
+    nWalletDBUpdated++;
+    
+    if (!Write(std::make_pair(std::string("sapzkmeta"), ivk), keyMeta))
+        return false;
+
+    return Write(std::make_pair(std::string("sapzkey"), defaultAddr), key, false);
 }
 
 bool CWalletDB::WriteSproutViewingKey(const libzcash::SproutViewingKey &vk)
@@ -511,6 +540,24 @@ ReadKeyValue(CWallet* pwallet, CDataStream& ssKey, CDataStream& ssValue,
 
             wss.nZKeys++;
         }
+        else if (strType == "sapzkey")
+        {
+            
+            //libzcash::SaplingIncomingViewingKey ivk;
+            //ssKey >> ivk;
+            libzcash::SaplingExtendedSpendingKey key;
+            ssKey >> key;
+
+            if (!pwallet->LoadSaplingZKey(key))
+            {
+                strErr = "Error reading wallet database: LoadSaplingZKey failed";
+                return false;
+            }
+
+            //add checks for integrity
+            wss.nZKeys++;
+        }
+
         else if (strType == "key" || strType == "wkey")
         {
             CPubKey vchPubKey;
@@ -624,6 +671,21 @@ ReadKeyValue(CWallet* pwallet, CDataStream& ssKey, CDataStream& ssValue,
             }
             wss.fIsEncrypted = true;
         }
+        else if (strType == "csapzkey")
+        {
+            libzcash::SaplingFullViewingKey fvk;
+            ssKey >> fvk;
+            vector<unsigned char> vchCryptedSecret;
+            ssValue >> vchCryptedSecret;
+            wss.nCKeys++;
+
+            if (!pwallet->LoadCryptedSaplingZKey(fvk,vchCryptedSecret))
+            {
+                strErr = "Error reading wallet database: LoadCryptedSaplingZKey failed";
+                return false;
+            }
+            wss.fIsEncrypted = true;
+        }
         else if (strType == "keymeta")
         {
             CPubKey vchPubKey;
@@ -650,6 +712,17 @@ ReadKeyValue(CWallet* pwallet, CDataStream& ssKey, CDataStream& ssValue,
             pwallet->LoadZKeyMetadata(addr, keyMeta);
 
             // ignore earliest key creation time as taddr will exist before any zaddr
+        }
+        else if (strType == "sapzkeymeta")
+        {
+            libzcash::SaplingIncomingViewingKey ivk;
+            ssKey >> ivk;
+            CKeyMetadata keyMeta;
+            ssValue >> keyMeta;
+
+            wss.nZKeyMeta++;
+
+            pwallet->LoadSaplingZKeyMetadata(ivk, keyMeta);
         }
         else if (strType == "defaultkey")
         {
@@ -759,6 +832,7 @@ static bool IsKeyType(string strType)
     return (strType== "key" || strType == "wkey" ||
             strType == "hdseed" || strType == "chdseed" ||
             strType == "zkey" || strType == "czkey" ||
+            strType == "sapzkey" || strType == "csapzkey" ||
             strType == "vkey" ||
             strType == "mkey" || strType == "ckey");
 }

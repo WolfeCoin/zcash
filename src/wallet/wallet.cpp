@@ -167,6 +167,10 @@ bool CWallet::AddSaplingZKey(
     }
 
     // TODO: Persist to disk
+    if (!IsCrypted()) {
+        auto ivk = sk.expsk.full_viewing_key().in_viewing_key();
+        return CWalletDB(strWalletFile).WriteSaplingZKey(ivk,sk, mapSaplingZKeyMetadata[ivk],defaultAddr); 
+    }
     
     return true;
 }
@@ -303,6 +307,16 @@ bool CWallet::AddCryptedSaplingSpendingKey(const libzcash::SaplingFullViewingKey
         return true;
     {
         // TODO: Sapling - Write to disk
+        LOCK(cs_wallet);
+        if (pwalletdbEncryption) {
+            return pwalletdbEncryption->WriteCryptedSaplingZKey(fvk,
+                                                         vchCryptedSecret,
+                                                         mapSaplingZKeyMetadata[fvk.in_viewing_key()]);
+        } else {
+            return CWalletDB(strWalletFile).WriteCryptedSaplingZKey(fvk,
+                                                         vchCryptedSecret,
+                                                         mapSaplingZKeyMetadata[fvk.in_viewing_key()]);
+        }
     }
     return false;
 }
@@ -333,7 +347,20 @@ bool CWallet::LoadCryptedZKey(const libzcash::SproutPaymentAddress &addr, const 
 {
     return CCryptoKeyStore::AddCryptedSproutSpendingKey(addr, rk, vchCryptedSecret);
 }
-
+bool CWallet::LoadCryptedSaplingZKey(const libzcash::SaplingFullViewingKey &fvk, const std::vector<unsigned char> &vchCryptedSecret)
+{    
+     return CCryptoKeyStore::AddCryptedSaplingSpendingKey(fvk, vchCryptedSecret);
+}
+bool CWallet::LoadSaplingZKeyMetadata(const libzcash::SaplingIncomingViewingKey &ivk, const CKeyMetadata &meta)
+{
+    AssertLockHeld(cs_wallet); // mapSaplingZKeyMetadata
+    mapSaplingZKeyMetadata[ivk] = meta;
+    return true;
+}
+bool CWallet::LoadSaplingZKey(const libzcash::SaplingExtendedSpendingKey &key)
+{
+    return CCryptoKeyStore::AddSaplingSpendingKey(key, key.DefaultAddress());
+}
 bool CWallet::LoadZKey(const libzcash::SproutSpendingKey &key)
 {
     return CCryptoKeyStore::AddSproutSpendingKey(key);
@@ -1929,14 +1956,12 @@ bool CWallet::SetHDSeed(const HDSeed& seed)
         return true;
     }
 
-    /* TODO: Uncomment during PR for #3388
     {
         LOCK(cs_wallet);
         if (!IsCrypted()) {
             return CWalletDB(strWalletFile).WriteHDSeed(seed);
         }
     }
-    */
     return true;
 }
 
@@ -1950,7 +1975,6 @@ bool CWallet::SetCryptedHDSeed(const uint256& seedFp, const std::vector<unsigned
         return true;
     }
 
-    /* TODO: Uncomment during PR for #3388
     {
         LOCK(cs_wallet);
         if (pwalletdbEncryption)
@@ -1958,17 +1982,14 @@ bool CWallet::SetCryptedHDSeed(const uint256& seedFp, const std::vector<unsigned
         else
             return CWalletDB(strWalletFile).WriteCryptedHDSeed(seedFp, vchCryptedSecret);
     }
-    */
     return false;
 }
 
 void CWallet::SetHDChain(const CHDChain& chain, bool memonly)
 {
     LOCK(cs_wallet);
-    /* TODO: Uncomment during PR for #3388
     if (!memonly && fFileBacked && !CWalletDB(strWalletFile).WriteHDChain(chain))
         throw std::runtime_error(std::string(__func__) + ": writing chain failed");
-    */
 
     hdChain = chain;
 }

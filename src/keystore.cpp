@@ -156,7 +156,7 @@ bool CBasicKeyStore::AddSaplingFullViewingKey(
     LOCK(cs_SpendingKeyStore);
     auto ivk = fvk.in_viewing_key();
     mapSaplingFullViewingKeys[ivk] = fvk;
-
+    
     if (defaultAddr) {
         // Add defaultAddr -> SaplingIncomingViewing to SaplingIncomingViewingKeyMap
         mapSaplingIncomingViewingKeys[defaultAddr.get()] = ivk;
